@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DomainScope - Domain Reconnaissance Toolkit</title>
+    <meta name="description"
+        content="DomainScope is a client-side domain reconnaissance tool that queries DNS records and enriches IP addresses using public APIs.">
+
+    <!-- Avoid flash of wrong theme before deferred script loads -->
+    <script>
+        (function () {
+            var saved = localStorage.getItem('domainscope-theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <header class="site-header">
+        <div class="container header-inner">
+            <a href="#" class="brand" aria-label="DomainScope home">
+                <span class="brand-icon" aria-hidden="true">◈</span>
+                <span class="brand-name">DomainScope</span>
+            </a>
+            <nav class="main-nav" aria-label="Main navigation">
+                <ul class="nav-list">
+                    <li><a href="#search">Search</a></li>
+                    <li><a href="#results">Results</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#feedback">Feedback</a></li>
+                </ul>
+            </nav>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Switch to dark
+                mode</button>
+        </div>
+    </header>
+
+    <main id="main-content">
+        <section id="search" class="section" aria-labelledby="search-heading">
+            <div class="container">
+                <h1 id="search-heading" class="page-title">Domain Reconnaissance</h1>
+                <p class="lead">Enter a domain name to query public DNS records and enrich any resolved IP addresses.
+                </p>
+
+                <form id="recon-form" class="recon-form" novalidate>
+                    <div class="form-group">
+                        <label for="domain" class="form-label">Domain name</label>
+                        <input type="search" id="domain" name="domain" class="form-input" required
+                            pattern="^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$"
+                            placeholder="example.com" list="sample-domains"
+                            aria-describedby="domain-hint domain-error">
+                        <datalist id="sample-domains">
+                            <option value="example.com">
+                            <option value="github.com">
+                            <option value="google.com">
+                            <option value="cloudflare.com">
+                            <option value="shu.ac.uk">
+                        </datalist>
+                        <span id="domain-hint" class="form-hint">Type or paste a domain. https:// and www prefixes are
+                            stripped automatically.</span>
+                        <span id="domain-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <fieldset class="form-group">
+                        <legend class="form-label">Record types to query</legend>
+                        <div class="checkbox-group" id="record-type-group">
+                            <label class="form-option">
+                                <input type="checkbox" name="record-type" value="A" checked> A (IPv4 address)
+                            </label>
+                            <label class="form-option">
+                                <input type="checkbox" name="record-type" value="AAAA"> AAAA (IPv6 address)
+                            </label>
+                            <label class="form-option">
+                                <input type="checkbox" name="record-type" value="MX" checked> MX (Mail exchange)
+                            </label>
+                            <label class="form-option">
+                                <input type="checkbox" name="record-type" value="TXT"> TXT (Text)
+                            </label>
+                            <label class="form-option">
+                                <input type="checkbox" name="record-type" value="NS" checked> NS (Nameserver)
+                            </label>
+                        </div>
+                        <span id="record-type-error" class="error-msg" role="alert"></span>
+                    </fieldset>
+
+                    <div class="form-group">
+                        <label for="ip-enrichment" class="form-label">IP enrichment</label>
+                        <select id="ip-enrichment" name="ip-enrichment" class="form-select"
+                            aria-describedby="ip-enrichment-hint">
+                            <option value="none">None</option>
+                            <option value="first" selected>First resolved IP only</option>
+                            <option value="all">All unique IPs (max 5)</option>
+                        </select>
+                        <span id="ip-enrichment-hint" class="form-hint">Looks up geolocation and ISP data for resolved
+                            IP addresses.</span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="recon-submit">
+                        <span class="btn-text">Run Recon</span>
+                        <span class="spinner" id="recon-spinner" aria-hidden="true" hidden></span>
+                    </button>
+                </form>
+
+                <div id="recon-status" class="status-msg" aria-live="polite"></div>
+
+                <div id="recent-searches" class="recent-searches" hidden>
+                    <h2 class="recent-title">Recent searches</h2>
+                    <div id="recent-list" class="recent-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="results" class="section section--alt" aria-labelledby="results-heading">
+            <div class="container">
+                <h2 id="results-heading" class="section-title">Results</h2>
+
+                <div id="results-placeholder" class="placeholder">
+                    <p>Enter a domain above to start reconnaissance.</p>
+                </div>
+
+                <div id="results-content" hidden>
+                    <div class="results-actions">
+                        <button type="button" id="copy-json" class="btn btn-secondary">Copy JSON</button>
+                        <button type="button" id="download-report" class="btn btn-secondary">Download report</button>
+                    </div>
+
+                    <h3 class="h4">DNS records</h3>
+                    <div class="table-wrap">
+                        <table class="data-table" id="dns-table">
+                            <caption>DNS records returned for the queried domain</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">TTL</th>
+                                    <th scope="col">Data</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dns-body"></tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="h4 ip-heading" id="ip-heading" hidden>IP intelligence</h3>
+                    <div id="ip-cards" class="ip-cards"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about" class="section" aria-labelledby="about-heading">
+            <div class="container">
+                <h2 id="about-heading" class="section-title">How DomainScope works</h2>
+                <p>DomainScope runs entirely in your browser. It queries public, key-less APIs and does not store your
+                    searches on any server.</p>
+
+                <details class="info-box">
+                    <summary>A record (IPv4 address)</summary>
+                    <p>Maps a domain name to an IPv4 address. This is the most common way browsers reach a website.</p>
+                </details>
+                <details class="info-box">
+                    <summary>AAAA record (IPv6 address)</summary>
+                    <p>Maps a domain name to an IPv6 address, the newer version of the Internet Protocol.</p>
+                </details>
+                <details class="info-box">
+                    <summary>MX record (Mail exchange)</summary>
+                    <p>Tells email servers where to deliver mail for the domain, including a priority value.</p>
+                </details>
+                <details class="info-box">
+                    <summary>TXT record (Text)</summary>
+                    <p>Holds arbitrary text, often used for SPF, DKIM and domain ownership verification.</p>
+                </details>
+                <details class="info-box">
+                    <summary>NS record (Nameserver)</summary>
+                    <p>Lists the authoritative DNS servers for the domain.</p>
+                </details>
+            </div>
+        </section>
+
+        <section id="feedback" class="section section--alt" aria-labelledby="feedback-heading">
+            <div class="container container--narrow">
+                <h2 id="feedback-heading" class="section-title">Report an issue</h2>
+                <form id="feedback-form" class="feedback-form" novalidate>
+                    <div class="form-group">
+                        <label for="feedback-name" class="form-label">Name</label>
+                        <input type="text" id="feedback-name" name="name" class="form-input" required
+                            autocomplete="name" aria-describedby="feedback-name-error">
+                        <span id="feedback-name-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedback-email" class="form-label">Email</label>
+                        <input type="email" id="feedback-email" name="email" class="form-input" required
+                            autocomplete="email" aria-describedby="feedback-email-error">
+                        <span id="feedback-email-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedback-type" class="form-label">Issue type</label>
+                        <select id="feedback-type" name="type" class="form-select" required
+                            aria-describedby="feedback-type-error">
+                            <option value="" disabled selected>Select an issue type</option>
+                            <option value="bug">Bug report</option>
+                            <option value="feature">Feature request</option>
+                            <option value="data">Incorrect data</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <span id="feedback-type-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="feedback-message" class="form-label">Message</label>
+                        <textarea id="feedback-message" name="message" class="form-input form-input--textarea" rows="5"
+                            required minlength="10" maxlength="1000"
+                            aria-describedby="feedback-message-error"></textarea>
+                        <span id="feedback-message-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <div class="form-group form-check">
+                        <label class="form-option" for="feedback-consent">
+                            <input type="checkbox" name="consent" id="feedback-consent" required
+                                aria-describedby="feedback-consent-error">
+                            I consent to you storing my feedback details for review
+                        </label>
+                        <span id="feedback-consent-error" class="error-msg" role="alert"></span>
+                    </div>
+
+                    <div id="feedback-alert" class="alert" role="status" hidden></div>
+                    <button type="submit" class="btn btn-primary">Submit feedback</button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>&copy; <span id="footer-year">2026</span> DomainScope</p>
+            <p id="last-updated" class="footer-meta"></p>
+        </div>
+    </footer>
+
+    <script src="script.js" defer></script>
+</body>
+
+</html>
